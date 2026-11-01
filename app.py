@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import os
+import html
 import shutil
 from datetime import datetime
 from dotenv import load_dotenv
@@ -13,6 +14,15 @@ from core.rag_engine import build_rag_chain, ask_question
 
 load_dotenv()
 
+# Sync Streamlit Cloud secrets to os.environ if running on cloud
+try:
+    if hasattr(st, "secrets"):
+        for sec_key, sec_val in st.secrets.items():
+            if isinstance(sec_val, str):
+                os.environ.setdefault(sec_key, sec_val)
+except Exception:
+    pass
+
 # ─── Page Configuration ─────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="VideoIntel AI — Meeting & Video Intelligence",
@@ -21,277 +31,294 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ─── Custom Modern Styling ──────────────────────────────────────────────────────
+# ─── Styling ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-    --bg-main: #07090e;
-    --bg-surface: #0e131f;
-    --bg-card: #141b2d;
-    --bg-card-hover: #1b243b;
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-focus: rgba(99, 102, 241, 0.5);
-    
-    --primary: #6366f1;
-    --primary-glow: rgba(99, 102, 241, 0.25);
-    --secondary: #06b6d4;
-    --accent-emerald: #10b981;
-    --accent-amber: #f59e0b;
-    --accent-rose: #f43f5e;
-    
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --bg: #0b0b0d;
+    --surface: #121215;
+    --surface-2: #18181c;
+    --line: #26262c;
+    --line-strong: #34343c;
+    --text: #ededef;
+    --text-dim: #a1a1aa;
+    --text-faint: #6b6b74;
+    --accent: #c8f53c;
+    --accent-ink: #11140a;
+    --accent-soft: rgba(200, 245, 60, 0.10);
+    --accent-line: rgba(200, 245, 60, 0.35);
+    --ok: #4ade80;
+    --run: #fbbf24;
+    --radius: 14px;
 }
 
-/* Global Reset */
-html, body, [class*="st-emotion-cache"] {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    color: var(--text-primary);
+/* ── Base ── */
+html, body, .stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
 }
-
-.stApp {
-    background: radial-gradient(circle at 15% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
-                radial-gradient(circle at 85% 90%, rgba(6, 182, 212, 0.06) 0%, transparent 40%),
-                var(--bg-main) !important;
+.stApp p, .stApp li, .stApp label, .stApp input, .stApp textarea, .stApp button {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+/* Keep Streamlit's icon font intact (upload, send, arrows, etc.) */
+[data-testid="stIconMaterial"],
+span[class*="material-symbols"],
+span[class*="material-icons"] {
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+}
+.stApp { background: var(--bg) !important; }
+header[data-testid="stHeader"] { background: transparent !important; }
+.block-container { max-width: 1240px; padding-top: 1.5rem !important; padding-bottom: 4rem !important; }
 
-/* Header & Typography */
-h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', sans-serif !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
+h1, h2, h3, h4 {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 600 !important;
+    color: var(--text) !important;
     letter-spacing: -0.02em;
 }
+p, li { color: var(--text-dim); line-height: 1.7; }
+strong { color: var(--text); }
+a { color: var(--accent) !important; }
 
-/* Custom Header Bar */
-.brand-nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.25rem 0rem;
-    margin-bottom: 2rem;
-    border-bottom: 1px solid var(--border-subtle);
+/* ── Top bar ── */
+.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+    padding: 0.4rem 0 1.4rem 0;
+    margin-bottom: 2.25rem;
+    border-bottom: 1px solid var(--line);
 }
-
-.brand-logo {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: 'Outfit', sans-serif;
-    font-size: 1.6rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    background: linear-gradient(135deg, #ffffff 20%, #a5b4fc 60%, #38bdf8 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.wordmark {
+    display: flex; align-items: center; gap: 0.65rem;
+    font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em; color: var(--text);
 }
-
-.badge-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.8rem;
-    border-radius: 9999px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    background: rgba(99, 102, 241, 0.12);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    color: #c7d2fe;
+.wordmark .mark {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-size: 0.9rem; font-weight: 800;
 }
-
-.badge-pill.green {
-    background: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #6ee7b7;
+.wordmark .sub { color: var(--text-faint); font-weight: 500; font-size: 0.85rem; }
+.chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; font-weight: 500; letter-spacing: 0.02em;
+    padding: 0.32rem 0.7rem; border-radius: 999px;
+    border: 1px solid var(--line-strong); color: var(--text-dim);
+    background: var(--surface);
+    display: inline-flex; align-items: center; gap: 0.45rem;
 }
+.chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
 
-.badge-pill.cyan {
-    background: rgba(6, 182, 212, 0.12);
-    border-color: rgba(6, 182, 212, 0.3);
-    color: #67e8f9;
+/* ── Hero ── */
+.eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 0.9rem;
 }
+.hero-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-weight: 400; font-size: clamp(2.4rem, 5vw, 3.6rem);
+    line-height: 1.02; letter-spacing: -0.02em; color: var(--text);
+    margin: 0 0 1rem 0;
+}
+.hero-title em { color: var(--accent); font-style: italic; }
+.hero-lede { color: var(--text-dim); font-size: 1rem; max-width: 560px; margin-bottom: 1.75rem; }
 
-/* Glassmorphic Container */
-.glass-box {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: 16px;
-    padding: 1.75rem;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-    margin-bottom: 1.5rem;
-    transition: transform 0.2s ease, border-color 0.2s ease;
+.section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-faint); margin: 0 0 0.75rem 0;
 }
 
-.glass-box:hover {
-    border-color: rgba(99, 102, 241, 0.3);
+/* ── Bordered containers ── */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius) !important;
 }
+[data-testid="stVerticalBlockBorderWrapper"] > div { padding: 0.35rem 0.5rem; }
 
-.box-header {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: 'Outfit', sans-serif;
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-secondary);
-    margin-bottom: 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding-bottom: 0.6rem;
+/* ── Feature list ── */
+.feature { display: flex; gap: 0.9rem; padding: 0.95rem 0; border-bottom: 1px solid var(--line); }
+.feature:last-child { border-bottom: none; padding-bottom: 0.2rem; }
+.feature .num {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent);
+    min-width: 1.6rem; padding-top: 0.15rem;
 }
+.feature .ft { color: var(--text); font-weight: 600; font-size: 0.92rem; margin-bottom: 0.15rem; }
+.feature .fd { color: var(--text-dim); font-size: 0.85rem; line-height: 1.55; }
 
-/* Metric Stats Row */
-.stat-card {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px;
-    padding: 1rem 1.25rem;
-    text-align: left;
+/* ── Radio as segmented control ── */
+div[role="radiogroup"] { gap: 0.4rem !important; flex-wrap: wrap; }
+div[role="radiogroup"] > label {
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 0.5rem 0.95rem !important; margin: 0 !important;
+    transition: border-color .15s ease, background .15s ease;
 }
-.stat-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
+div[role="radiogroup"] > label:hover { border-color: var(--line-strong); }
+div[role="radiogroup"] > label:has(input:checked) {
+    background: var(--accent-soft); border-color: var(--accent-line);
 }
-.stat-value {
-    font-family: 'Outfit', sans-serif;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-top: 0.2rem;
-}
+div[role="radiogroup"] > label:has(input:checked) p { color: var(--text) !important; }
+div[role="radiogroup"] > label > div:first-child { display: none; }
+div[role="radiogroup"] p { font-size: 0.86rem !important; font-weight: 500; color: var(--text-dim) !important; }
 
-/* Action Button */
-.stButton > button {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+/* ── Inputs ── */
+.stTextInput label p, .stSelectbox label p, .stFileUploader label p {
+    font-size: 0.78rem !important; font-weight: 600 !important; color: var(--text-dim) !important;
+}
+.stTextInput > div > div, .stSelectbox > div > div, .stTextArea > div > div {
+    background: var(--bg) !important;
+    border: 1px solid var(--line-strong) !important;
+    border-radius: 10px !important;
+}
+.stTextInput input, .stTextArea textarea {
+    background: transparent !important; color: var(--text) !important; font-size: 0.92rem !important;
+}
+.stTextInput > div > div:focus-within {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
+[data-testid="stFileUploaderDropzone"] {
+    background: var(--bg) !important;
+    border: 1px dashed var(--line-strong) !important;
     border-radius: 12px !important;
-    font-family: 'Outfit', sans-serif !important;
-    font-weight: 600 !important;
-    font-size: 0.95rem !important;
-    padding: 0.7rem 1.5rem !important;
-    box-shadow: 0 4px 15px var(--primary-glow) !important;
-    transition: all 0.2s ease !important;
 }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--accent-line) !important; }
+.stCaption, [data-testid="stCaptionContainer"] { color: var(--text-faint) !important; }
 
-.stButton > button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.45) !important;
-}
-
-.stButton > button[kind="secondary"],
-.stButton > button[data-testid="baseButton-secondary"] {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid var(--border-subtle) !important;
+/* ── Buttons ── */
+.stButton > button, .stDownloadButton > button {
+    border-radius: 10px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 600 !important; font-size: 0.88rem !important;
+    padding: 0.6rem 1.1rem !important;
+    transition: transform .12s ease, background .15s ease, border-color .15s ease !important;
     box-shadow: none !important;
 }
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"],
+.stButton > button[data-testid="stBaseButton-primary"] {
+    background: var(--accent) !important; color: var(--accent-ink) !important;
+    border: 1px solid var(--accent) !important;
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="stBaseButton-primary"]:hover {
+    background: #d6ff5a !important; transform: translateY(-1px);
+}
+.stButton > button[kind="primary"] p { color: var(--accent-ink) !important; }
+.stButton > button[kind="secondary"],
+.stButton > button[data-testid="baseButton-secondary"],
+.stButton > button[data-testid="stBaseButton-secondary"],
+.stDownloadButton > button {
+    background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--line-strong) !important;
+}
 .stButton > button[kind="secondary"]:hover,
-.stButton > button[data-testid="baseButton-secondary"]:hover {
-    background: rgba(255, 255, 255, 0.1) !important;
-    border-color: rgba(255, 255, 255, 0.2) !important;
+.stButton > button[data-testid="stBaseButton-secondary"]:hover,
+.stDownloadButton > button:hover {
+    border-color: var(--accent-line) !important; background: #1d1d22 !important;
 }
 
-/* Tabs Redesign */
+/* ── Pipeline stepper ── */
+.step {
+    display: grid; grid-template-columns: 2rem 1fr auto; align-items: center; gap: 0.8rem;
+    padding: 0.8rem 1rem; margin-bottom: 0.45rem;
+    border-radius: 10px; background: var(--surface); border: 1px solid var(--line);
+    font-size: 0.88rem; color: var(--text-faint);
+}
+.step .idx { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-faint); }
+.step .state {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 0.2rem 0.55rem; border-radius: 6px;
+    border: 1px solid var(--line-strong); color: var(--text-faint);
+}
+.step.active { border-color: rgba(251, 191, 36, 0.4); color: var(--text); background: rgba(251,191,36,0.05); }
+.step.active .idx { color: var(--run); }
+.step.active .state { color: var(--run); border-color: rgba(251,191,36,0.4); }
+.step.done { color: var(--text-dim); }
+.step.done .idx { color: var(--ok); }
+.step.done .state { color: var(--ok); border-color: rgba(74,222,128,0.35); }
+
+.stProgress > div > div > div { background: var(--line) !important; }
+.stProgress > div > div > div > div { background: var(--accent) !important; }
+
+/* ── Report header & stats ── */
+.report-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-faint); margin-bottom: 0.6rem;
+}
+.report-meta b { color: var(--accent); font-weight: 600; }
+.report-title {
+    font-family: 'Instrument Serif', Georgia, serif; font-weight: 400;
+    font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; letter-spacing: -0.015em;
+    color: var(--text); margin: 0 0 1.5rem 0;
+}
+.stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); overflow: hidden; margin-bottom: 2rem;
+}
+.stat { padding: 1.1rem 1.3rem; border-right: 1px solid var(--line); }
+.stat:last-child { border-right: none; }
+.stat .k {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.stat .v { font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; color: var(--text); margin-top: 0.3rem; }
+.stat .v small { font-size: 0.85rem; color: var(--text-faint); font-weight: 500; margin-left: 0.15rem; }
+@media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(2) { border-right: none; }
+    .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+
+/* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 0.5rem;
-    border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 0.5rem;
+    gap: 0.25rem; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 0.3rem; width: fit-content; max-width: 100%; overflow-x: auto;
 }
-
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {
+    display: none !important; background: transparent !important; height: 0 !important;
+}
 .stTabs [data-baseweb="tab"] {
-    border-radius: 8px;
-    padding: 0.5rem 1.25rem;
-    font-family: 'Outfit', sans-serif;
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    background: transparent;
-    border: 1px solid transparent;
+    height: auto; border-radius: 8px; padding: 0.5rem 1rem;
+    background: transparent; border: none;
+}
+.stTabs [data-baseweb="tab"] p { font-size: 0.85rem; font-weight: 500; color: var(--text-dim); }
+.stTabs [aria-selected="true"] { background: var(--surface-2) !important; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.stTabs [aria-selected="true"] p { color: var(--text) !important; }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 1.5rem; }
+
+.panel-title { font-size: 1.15rem; font-weight: 600; color: var(--text); margin: 0.2rem 0 0.2rem 0; }
+.panel-sub { font-size: 0.85rem; color: var(--text-faint); margin-bottom: 1rem; }
+
+/* ── Chat ── */
+[data-testid="stChatMessage"] {
+    background: var(--surface) !important; border: 1px solid var(--line);
+    border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 0.6rem;
+}
+[data-testid="stChatInput"] > div {
+    background: var(--surface) !important; border: 1px solid var(--line-strong) !important; border-radius: 12px !important;
+}
+[data-testid="stChatInput"] > div:focus-within { border-color: var(--accent) !important; }
+[data-testid="stAlert"] {
+    background: var(--surface) !important; border: 1px solid var(--line) !important; border-radius: 12px !important;
 }
 
-.stTabs [aria-selected="true"] {
-    background: rgba(99, 102, 241, 0.15) !important;
-    border: 1px solid rgba(99, 102, 241, 0.3) !important;
-    color: #c7d2fe !important;
-}
-
-/* Stepper Bar */
-.stepper-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--border-subtle);
-    font-size: 0.85rem;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-}
-.stepper-item.active {
-    background: rgba(99, 102, 241, 0.1);
-    border-color: rgba(99, 102, 241, 0.4);
-    color: #e0e7ff;
-}
-.stepper-item.done {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #a7f3d0;
-}
-
-/* Input Fields */
-.stTextInput > div > div > input,
-.stSelectbox > div > div,
-.stTextArea > div > div > textarea {
-    background: var(--bg-surface) !important;
-    border: 1px solid var(--border-subtle) !important;
-    border-radius: 10px !important;
-    color: var(--text-primary) !important;
-    font-size: 0.9rem !important;
-}
-
-.stTextInput > div > div > input:focus {
-    border-color: var(--primary) !important;
-    box-shadow: 0 0 0 2px var(--primary-glow) !important;
-}
-
-/* Chat Styling */
-.stChatMessage {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: 14px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-}
-
-/* Transcript Container */
+/* ── Transcript ── */
 .transcript-scroll {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px;
-    padding: 1.5rem;
-    max-height: 480px;
-    overflow-y: auto;
-    font-size: 0.88rem;
-    line-height: 1.8;
-    color: #cbd5e1;
-    white-space: pre-wrap;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.5rem 1.75rem; max-height: 520px; overflow-y: auto;
+    font-size: 0.92rem; line-height: 1.85; color: #c9c9cf; white-space: pre-wrap;
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-main); }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -308,19 +335,31 @@ for key, val in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# ─── Navigation Header ──────────────────────────────────────────────────────────
+# ─── Top Bar ────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="brand-nav">
-    <div class="brand-logo">
-        <span>⚡ VideoIntel AI</span>
+<div class="topbar">
+    <div class="wordmark">
+        <div class="mark">V</div>
+        <span>VideoIntel</span><span class="sub">/ meeting intelligence</span>
     </div>
-    <div style="display:flex; gap:0.6rem; align-items:center;">
-        <span class="badge-pill green">🟢 Engine Online</span>
-        <span class="badge-pill">⚡ Groq GPT-OSS 120B</span>
-        <span class="badge-pill cyan">🎙️ Whisper AI</span>
+    <div class="chips">
+        <span class="chip"><span class="dot"></span>engine online</span>
+        <span class="chip">groq · gpt-oss-120b</span>
+        <span class="chip">whisper · stt</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# Display labels only — the underlying option values are unchanged
+SOURCE_LABELS = {
+    "🔗 YouTube Video URL": "YouTube link",
+    "📁 Upload Audio/Video File": "Upload file",
+    "📂 Local File Path": "Local path",
+}
+LANGUAGE_LABELS = {
+    "English": "English",
+    "Hinglish (Hindi + English)": "Hinglish (Hindi + English)",
+}
 
 # ─── Input & Analysis Control ───────────────────────────────────────────────────
 if not st.session_state.result:
@@ -328,94 +367,97 @@ if not st.session_state.result:
 
     with col_input:
         st.markdown("""
-        <div style="margin-bottom: 1.25rem;">
-            <h2 style="font-size:1.8rem; margin-bottom:0.3rem;">🎬 Meeting & Video Analysis</h2>
-            <p style="color:var(--text-secondary); font-size:0.92rem;">
-                Transform lengthy YouTube videos or meeting recordings into actionable summaries, structured decisions, and an interactive conversational assistant.
-            </p>
-        </div>
+        <div class="eyebrow">Meeting &amp; video analysis</div>
+        <h1 class="hero-title">Hours of talk,<br>reduced to <em>what matters.</em></h1>
+        <p class="hero-lede">
+            Drop in a YouTube link or a recording. Get a summary, action items, decisions,
+            open questions — and a transcript you can ask questions of.
+        </p>
         """, unsafe_allow_html=True)
 
-        input_method = st.radio(
-            "Source Type",
-            ["🔗 YouTube Video URL", "📁 Upload Audio/Video File", "📂 Local File Path"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
-
-        source_path = ""
-        if input_method == "🔗 YouTube Video URL":
-            yt_url = st.text_input(
-                "YouTube URL",
-                placeholder="https://www.youtube.com/watch?v=...",
-                help="Paste any standard YouTube video URL."
+        with st.container(border=True):
+            st.markdown('<div class="section-label">01 — Source</div>', unsafe_allow_html=True)
+            input_method = st.radio(
+                "Source Type",
+                ["🔗 YouTube Video URL", "📁 Upload Audio/Video File", "📂 Local File Path"],
+                horizontal=True,
+                label_visibility="collapsed",
+                format_func=lambda o: SOURCE_LABELS.get(o, o),
             )
-            source_path = yt_url.strip()
 
-        elif input_method == "📁 Upload Audio/Video File":
-            uploaded_file = st.file_uploader(
-                "Upload Recording",
-                type=["mp4", "mp3", "wav", "m4a", "mov", "mkv", "webm"],
-                help="Upload an audio or video recording from your device."
-            )
-            if uploaded_file is not None:
-                upload_dir = os.path.join("downloads", "uploads")
-                os.makedirs(upload_dir, exist_ok=True)
-                temp_path = os.path.join(upload_dir, uploaded_file.name)
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                source_path = temp_path
-                st.caption(f"✅ Uploaded: `{uploaded_file.name}` ({round(uploaded_file.size / 1024 / 1024, 2)} MB)")
+            source_path = ""
+            if input_method == "🔗 YouTube Video URL":
+                yt_url = st.text_input(
+                    "YouTube URL",
+                    placeholder="https://www.youtube.com/watch?v=...",
+                    help="Paste any standard YouTube video URL."
+                )
+                source_path = yt_url.strip()
 
-        else:
-            local_path = st.text_input(
-                "Local File Path",
-                placeholder="e.g. C:/Recordings/team_sync.mp4",
-                help="Provide direct absolute or relative file path on disk."
-            )
-            source_path = local_path.strip()
+            elif input_method == "📁 Upload Audio/Video File":
+                uploaded_file = st.file_uploader(
+                    "Upload Recording",
+                    type=["mp4", "mp3", "wav", "m4a", "mov", "mkv", "webm"],
+                    help="Upload an audio or video recording from your device."
+                )
+                if uploaded_file is not None:
+                    upload_dir = os.path.join("downloads", "uploads")
+                    os.makedirs(upload_dir, exist_ok=True)
+                    temp_path = os.path.join(upload_dir, uploaded_file.name)
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    source_path = temp_path
+                    st.caption(f"✓ {uploaded_file.name} · {round(uploaded_file.size / 1024 / 1024, 2)} MB")
 
-        col_lang, col_btn = st.columns([1, 1], gap="medium")
-        with col_lang:
-            language_option = st.selectbox(
-                "Spoken Audio Language",
-                ["English", "Hinglish (Hindi + English)"],
-                index=0,
-                help="Choose Hinglish if your audio mixes Hindi & English to enable Whisper translation."
-            )
-        with col_btn:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            analyze_trigger = st.button("🚀 Analyze Recording", use_container_width=True)
+            else:
+                local_path = st.text_input(
+                    "Local File Path",
+                    placeholder="e.g. C:/Recordings/team_sync.mp4",
+                    help="Provide direct absolute or relative file path on disk."
+                )
+                source_path = local_path.strip()
+
+            st.markdown('<div style="height:0.5rem"></div><div class="section-label">02 — Settings</div>', unsafe_allow_html=True)
+            col_lang, col_btn = st.columns([1, 1], gap="medium")
+            with col_lang:
+                language_option = st.selectbox(
+                    "Spoken Audio Language",
+                    ["English", "Hinglish (Hindi + English)"],
+                    index=0,
+                    help="Choose Hinglish if your audio mixes Hindi & English to enable Whisper translation.",
+                    format_func=lambda o: LANGUAGE_LABELS.get(o, o),
+                )
+            with col_btn:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                analyze_trigger = st.button("Analyze recording  →", use_container_width=True, type="primary")
 
     with col_info:
-        st.markdown("""
-        <div class="glass-box" style="margin-top:0.5rem;">
-            <div class="box-header">⚡ Features Included</div>
-            <div style="display:flex; flex-direction:column; gap:0.9rem; font-size:0.88rem; color:var(--text-secondary);">
-                <div>
-                    <strong style="color:var(--text-primary);">🎙️ Local Speech-to-Text:</strong>
-                    <br>Accurately transcribes audio locally using OpenAI's Whisper model.
-                </div>
-                <div>
-                    <strong style="color:var(--text-primary);">📋 Smart Synthesis:</strong>
-                    <br>Extracts an executive summary, concise title, and structured action items.
-                </div>
-                <div>
-                    <strong style="color:var(--text-primary);">🧠 ChromaDB Vector RAG:</strong>
-                    <br>Chunks and indexes meeting transcripts for conversational semantic querying.
-                </div>
-                <div>
-                    <strong style="color:var(--text-primary);">⚡ Groq Acceleration:</strong>
-                    <br>Instant responses powered by Groq's high-throughput cloud inference.
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div style='height: 2.2rem;'></div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("""
+            <div class="section-label">What you get</div>
+            <div class="feature"><div class="num">01</div><div>
+                <div class="ft">Local speech-to-text</div>
+                <div class="fd">Transcribes audio on your machine with OpenAI's Whisper.</div>
+            </div></div>
+            <div class="feature"><div class="num">02</div><div>
+                <div class="ft">Smart synthesis</div>
+                <div class="fd">An executive summary, a concise title and structured action items.</div>
+            </div></div>
+            <div class="feature"><div class="num">03</div><div>
+                <div class="ft">ChromaDB vector RAG</div>
+                <div class="fd">The transcript is chunked and indexed so you can query it in plain language.</div>
+            </div></div>
+            <div class="feature"><div class="num">04</div><div>
+                <div class="ft">Groq acceleration</div>
+                <div class="fd">Fast answers from Groq's high-throughput cloud inference.</div>
+            </div></div>
+            """, unsafe_allow_html=True)
 
     # ── Pipeline Execution ──────────────────────────────────────────────────────
     if analyze_trigger:
         if not source_path:
-            st.error("⚠️ Please provide a valid YouTube URL, upload an audio/video file, or specify a file path.")
+            st.error("Please provide a valid YouTube URL, upload an audio/video file, or specify a file path.")
         else:
             status_container = st.container()
             progress_bar = st.progress(0)
@@ -429,28 +471,29 @@ if not st.session_state.result:
                 ("extract", "🔍 Extracting Action Items & Decisions"),
                 ("rag", "🧠 Building Chroma Vector Index"),
             ]
+            step_index = {key: i + 1 for i, (key, _) in enumerate(steps)}
+
+            def render_step(step_key, status, label):
+                state_text = {"pending": "queued", "active": "running", "done": "done"}[status]
+                css = "" if status == "pending" else status
+                step_placeholders[step_key].markdown(
+                    f'<div class="step {css}">'
+                    f'<span class="idx">{step_index[step_key]:02d}</span>'
+                    f'<span>{html.escape(label)}</span>'
+                    f'<span class="state">{state_text}</span></div>',
+                    unsafe_allow_html=True
+                )
 
             step_placeholders = {}
             with status_container:
-                st.markdown("### ⚙️ Processing Pipeline")
+                st.markdown('<div style="height:1.5rem"></div><div class="section-label">Processing pipeline</div>', unsafe_allow_html=True)
                 for key, label in steps:
                     step_placeholders[key] = st.empty()
-                    step_placeholders[key].markdown(
-                        f'<div class="stepper-item"><span>⏳</span><span>{label}</span></div>',
-                        unsafe_allow_html=True
-                    )
+                    render_step(key, "pending", label.split(" ", 1)[1])
 
             def mark_step(step_key, status, label):
-                if status == "active":
-                    step_placeholders[step_key].markdown(
-                        f'<div class="stepper-item active"><span>⚙️</span><strong>{label} (running…)</strong></div>',
-                        unsafe_allow_html=True
-                    )
-                elif status == "done":
-                    step_placeholders[step_key].markdown(
-                        f'<div class="stepper-item done"><span>✅</span><span>{label}</span></div>',
-                        unsafe_allow_html=True
-                    )
+                if status in ("active", "done"):
+                    render_step(step_key, status, label)
 
             try:
                 # 1. Audio
@@ -509,36 +552,30 @@ if not st.session_state.result:
                     "created_at": datetime.now().strftime("%b %d, %Y • %I:%M %p"),
                 }
                 st.session_state.chat_history = []
-                st.success("✅ Analysis completed successfully!")
+                st.success("Analysis complete.")
                 time.sleep(0.4)
                 st.rerun()
 
             except Exception as e:
-                st.error(f"❌ Error during processing: {str(e)}")
+                st.error(f"Error during processing: {str(e)}")
 
 # ─── Dashboard (Post-Analysis View) ─────────────────────────────────────────────
 if st.session_state.result:
     r = st.session_state.result
 
-    # Header with title & quick action
+    # Header with title & quick actions
     top_col, btn_col = st.columns([8, 4], gap="medium")
     with top_col:
         st.markdown(f"""
-        <div style="margin-bottom:0.5rem;">
-            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--primary); font-weight:700;">
-                📌 Session Report • {r.get('created_at', '')}
-            </div>
-            <h1 style="font-size: clamp(1.8rem, 3.5vw, 2.5rem); margin: 0.2rem 0 0.5rem 0;">
-                {r['title']}
-            </h1>
-        </div>
+        <div class="report-meta"><b>Session report</b> &nbsp;·&nbsp; {html.escape(r.get('created_at', ''))}</div>
+        <h1 class="report-title">{html.escape(str(r['title']))}</h1>
         """, unsafe_allow_html=True)
 
     with btn_col:
-        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:22px;'></div>", unsafe_allow_html=True)
         reset_col, dl_col = st.columns([1, 1], gap="small")
         with reset_col:
-            if st.button("🔄 New Analysis", use_container_width=True, type="secondary"):
+            if st.button("↺  New analysis", use_container_width=True, type="secondary"):
                 st.session_state.result = None
                 st.session_state.chat_history = []
                 st.rerun()
@@ -573,150 +610,242 @@ Generated by VideoIntel AI on {r.get('created_at', '')}
 {r['transcript']}
 """
             st.download_button(
-                label="📥 Export Report",
+                label="↓  Export report",
                 data=full_export,
                 file_name=f"Meeting_Report_{int(time.time())}.md",
                 mime="text/markdown",
                 use_container_width=True
             )
 
-    # Metrics Strip
+    # Metrics strip
     w_count = r.get("word_count", len(r["transcript"].split()))
     est_reading = max(1, round(w_count / 150))
     chunks_val = r.get("chunks_count", 1)
     time_val = r.get("elapsed_time", 0.0)
 
-    m1, m2, m3, m4 = st.columns(4, gap="medium")
-    with m1:
-        st.markdown(f"""
-        <div class="stat-card">
-            <div class="stat-label">📝 Word Count</div>
-            <div class="stat-value">{w_count:,}</div>
-        </div>""", unsafe_allow_html=True)
-    with m2:
-        st.markdown(f"""
-        <div class="stat-card">
-            <div class="stat-label">🧩 Audio Chunks</div>
-            <div class="stat-value">{chunks_val}</div>
-        </div>""", unsafe_allow_html=True)
-    with m3:
-        st.markdown(f"""
-        <div class="stat-card">
-            <div class="stat-label">⏱️ Est. Reading Time</div>
-            <div class="stat-value">~{est_reading} min</div>
-        </div>""", unsafe_allow_html=True)
-    with m4:
-        st.markdown(f"""
-        <div class="stat-card">
-            <div class="stat-label">⚡ Pipeline Speed</div>
-            <div class="stat-value">{time_val}s</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stats">
+        <div class="stat"><div class="k">Words</div><div class="v">{w_count:,}</div></div>
+        <div class="stat"><div class="k">Audio chunks</div><div class="v">{chunks_val}</div></div>
+        <div class="stat"><div class="k">Reading time</div><div class="v">~{est_reading}<small>min</small></div></div>
+        <div class="stat"><div class="k">Pipeline</div><div class="v">{time_val}<small>s</small></div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── Main Tabs ───────────────────────────────────────────────────────────────
     tab_summary, tab_tasks, tab_decisions, tab_chat, tab_transcript = st.tabs([
-        "📋 Executive Summary",
-        "✅ Action Items",
-        "🔑 Decisions & Questions",
-        "💬 Chat with Meeting",
-        "📝 Transcript"
+        "Summary",
+        "Action items",
+        "Decisions & questions",
+        "Ask the meeting",
+        "Transcript"
     ])
 
     with tab_summary:
-        st.markdown('<div class="glass-box">', unsafe_allow_html=True)
-        st.markdown("### 📋 Executive Summary")
-        st.markdown(r["summary"])
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="section-label">Executive summary</div>', unsafe_allow_html=True)
+            st.markdown(r["summary"])
 
     with tab_tasks:
-        st.markdown('<div class="glass-box">', unsafe_allow_html=True)
-        st.markdown("### ✅ Action Items & Assigned Tasks")
-        st.markdown(r["action_items"])
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="section-label">Action items &amp; owners</div>', unsafe_allow_html=True)
+            st.markdown(r["action_items"])
 
     with tab_decisions:
-        c_left, c_right = st.columns(2, gap="large")
+        c_left, c_right = st.columns(2, gap="medium")
         with c_left:
-            st.markdown('<div class="glass-box">', unsafe_allow_html=True)
-            st.markdown("### 🔑 Key Decisions Reached")
-            st.markdown(r["key_decisions"])
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown('<div class="section-label">Key decisions</div>', unsafe_allow_html=True)
+                st.markdown(r["key_decisions"])
         with c_right:
-            st.markdown('<div class="glass-box">', unsafe_allow_html=True)
-            st.markdown("### ❓ Open Questions & Follow-ups")
-            st.markdown(r["open_questions"])
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown('<div class="section-label">Open questions &amp; follow-ups</div>', unsafe_allow_html=True)
+                st.markdown(r["open_questions"])
 
     with tab_chat:
+        # Chat-tab styling (scoped with marker classes so it doesn't leak elsewhere)
         st.markdown("""
-        <div style="margin-bottom:1rem;">
-            <h3 style="margin-bottom:0.2rem;">💬 Conversational Meeting Assistant</h3>
-            <p style="color:var(--text-secondary); font-size:0.88rem;">
-                Ask questions to query the meeting transcript using semantic retrieval (RAG).
-            </p>
-        </div>
+        <style>
+        /* hide the zero-height marker elements */
+        [data-testid="stElementContainer"]:has(.msg-marker),
+        .element-container:has(.msg-marker),
+        [data-testid="stElementContainer"]:has(.side-marker),
+        .element-container:has(.side-marker) { display: none !important; }
+
+        /* conversation header */
+        .chat-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+            padding: 0.4rem 0.2rem 1rem 0.2rem; margin-bottom: 0.9rem;
+            border-bottom: 1px solid var(--line);
+        }
+        .chat-head .t { font-size: 1.05rem; font-weight: 600; color: var(--text); }
+        .chat-head .s { font-size: 0.8rem; color: var(--text-faint); margin-top: 0.15rem; }
+        .chat-head .count {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.06em;
+            color: var(--text-dim); border: 1px solid var(--line-strong); border-radius: 999px;
+            padding: 0.25rem 0.65rem; white-space: nowrap;
+        }
+
+        /* empty state */
+        .chat-empty { text-align: center; padding: 3.5rem 1rem 3rem 1rem; }
+        .chat-empty .glyph {
+            width: 52px; height: 52px; margin: 0 auto 1rem auto; border-radius: 14px;
+            display: grid; place-items: center; font-size: 1.4rem;
+            background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+        }
+        .chat-empty .h { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.35rem; }
+        .chat-empty .p { font-size: 0.86rem; color: var(--text-faint); max-width: 340px; margin: 0 auto; }
+
+        /* message bubbles */
+        [data-testid="stChatMessage"] { gap: 0.75rem; }
+        [data-testid="stChatMessage"] { box-sizing: border-box; }
+        [data-testid="stChatMessage"]:has(.msg-user) {
+            flex-direction: row-reverse;
+            background: var(--accent-soft) !important;
+            border-color: var(--accent-line) !important;
+            width: 82% !important;
+            max-width: 82% !important;
+            margin-left: auto !important;
+            margin-right: 0 !important;
+        }
+        [data-testid="stChatMessage"]:has(.msg-assistant) {
+            background: var(--surface-2) !important;
+            width: 94% !important;
+            max-width: 94% !important;
+            margin-left: 0 !important;
+            margin-right: auto !important;
+        }
+        [data-testid="stChatMessage"] > div { min-width: 0; }
+        [data-testid="stChatMessage"]:has(.msg-user) p { color: var(--text) !important; }
+        [data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"] {
+            background: var(--bg) !important; border: 1px solid var(--line-strong);
+            border-radius: 9px;
+        }
+        .msg-role {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text-faint); margin-bottom: 0.15rem;
+        }
+        [data-testid="stChatMessage"]:has(.msg-user) .msg-role { color: var(--accent); }
+        @media (max-width: 760px) {
+            [data-testid="stChatMessage"]:has(.msg-user),
+            [data-testid="stChatMessage"]:has(.msg-assistant) { width: 100% !important; max-width: 100% !important; }
+        }
+
+        /* suggestion cards in the side column */
+        [data-testid="stColumn"]:has(.side-marker) .stButton > button,
+        [data-testid="column"]:has(.side-marker) .stButton > button {
+            justify-content: flex-start !important; text-align: left !important;
+            background: var(--surface) !important; border: 1px solid var(--line) !important;
+            padding: 0.85rem 1rem !important; min-height: 3.2rem;
+        }
+        [data-testid="stColumn"]:has(.side-marker) .stButton > button:hover,
+        [data-testid="column"]:has(.side-marker) .stButton > button:hover {
+            border-color: var(--accent-line) !important; background: var(--surface-2) !important;
+        }
+        [data-testid="stColumn"]:has(.side-marker) .stButton > button > div,
+        [data-testid="column"]:has(.side-marker) .stButton > button > div,
+        [data-testid="stColumn"]:has(.side-marker) .stButton > button [data-testid="stMarkdownContainer"],
+        [data-testid="column"]:has(.side-marker) .stButton > button [data-testid="stMarkdownContainer"] {
+            width: 100%; justify-content: flex-start !important; text-align: left !important;
+        }
+        [data-testid="stColumn"]:has(.side-marker) .stButton > button p,
+        [data-testid="column"]:has(.side-marker) .stButton > button p {
+            font-weight: 500 !important; color: var(--text-dim) !important; text-align: left !important;
+        }
+        .side-note {
+            font-size: 0.8rem; color: var(--text-faint); line-height: 1.6;
+            border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 0.75rem;
+        }
+        .side-note b { color: var(--text-dim); font-weight: 600; }
+        </style>
         """, unsafe_allow_html=True)
 
-        # Quick Suggestion Chips
-        st.markdown("<span style='font-size:0.75rem; color:var(--text-muted); font-weight:600; text-transform:uppercase;'>Suggested Prompts:</span>", unsafe_allow_html=True)
-        chip_col1, chip_col2, chip_col3, chip_col4 = st.columns(4, gap="small")
-        
+        chat_main, chat_side = st.columns([8, 4], gap="large")
+
+        # ── Side column: suggested prompts (same four prompts as before) ──
         prompt_to_send = None
-        with chip_col1:
-            if st.button("📌 Main Conclusions?", use_container_width=True, type="secondary"):
+        with chat_side:
+            st.markdown('<span class="side-marker"></span>', unsafe_allow_html=True)
+            st.markdown('<div class="section-label">Suggested questions</div>', unsafe_allow_html=True)
+            if st.button("→  What were the main conclusions?", use_container_width=True, type="secondary"):
                 prompt_to_send = "What were the main conclusions and key takeaways of this meeting?"
-        with chip_col2:
-            if st.button("👥 Who was assigned tasks?", use_container_width=True, type="secondary"):
+            if st.button("→  Who was assigned which tasks?", use_container_width=True, type="secondary"):
                 prompt_to_send = "Who was assigned tasks and what are their specific responsibilities?"
-        with chip_col3:
-            if st.button("⏳ Deadlines mentioned?", use_container_width=True, type="secondary"):
+            if st.button("→  What deadlines were discussed?", use_container_width=True, type="secondary"):
                 prompt_to_send = "What deadlines or timelines were discussed?"
-        with chip_col4:
-            if st.button("❓ Unresolved issues?", use_container_width=True, type="secondary"):
+            if st.button("→  Any unresolved issues?", use_container_width=True, type="secondary"):
                 prompt_to_send = "Were there any disagreements or unresolved issues?"
 
-        # Chat history container
-        chat_container = st.container()
-        with chat_container:
-            if not st.session_state.chat_history:
-                st.info("💡 Start chatting below or click any of the suggestion buttons above!")
-            else:
-                for msg in st.session_state.chat_history:
-                    avatar = "👤" if msg["role"] == "user" else "🤖"
-                    with st.chat_message(msg["role"], avatar=avatar):
-                        st.markdown(msg["content"])
+            st.markdown("""
+            <div class="side-note">
+                <b>How it works.</b> Your question is matched against indexed chunks of the
+                transcript, and the most relevant passages are sent to the model to answer.
+                Specific questions get sharper answers.
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Chat input bar
-        user_query = st.chat_input("Ask a question about this meeting transcript...")
-        
-        # Check if button chip or chat input triggered
-        active_query = prompt_to_send or user_query
-        if active_query:
-            st.session_state.chat_history.append({"role": "user", "content": active_query})
-            with st.spinner("Searching transcript & reasoning with Groq…"):
-                answer = ask_question(r["rag_chain"], active_query)
-            st.session_state.chat_history.append({"role": "assistant", "content": answer})
-            st.rerun()
+            if st.session_state.chat_history:
+                st.markdown("<div style='height:0.75rem;'></div>", unsafe_allow_html=True)
+                if st.button("Clear conversation", type="secondary", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.rerun()
 
-        if st.session_state.chat_history:
-            st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-            if st.button("🗑️ Clear Chat History", type="secondary"):
-                st.session_state.chat_history = []
+        # ── Main column: conversation ──
+        with chat_main:
+            n_questions = sum(1 for m in st.session_state.chat_history if m["role"] == "user")
+            with st.container(border=True):
+                st.markdown(f"""
+                <div class="chat-head">
+                    <div>
+                        <div class="t">Ask the meeting</div>
+                        <div class="s">Answers are drawn from the transcript via semantic retrieval.</div>
+                    </div>
+                    <span class="count">{n_questions} {'question' if n_questions == 1 else 'questions'}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if not st.session_state.chat_history:
+                    st.markdown("""
+                    <div class="chat-empty">
+                        <div class="glyph">?</div>
+                        <div class="h">Nothing asked yet</div>
+                        <div class="p">Type a question below, or pick one of the suggestions to get started.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    for msg in st.session_state.chat_history:
+                        avatar = "👤" if msg["role"] == "user" else "✨"
+                        role_label = "You" if msg["role"] == "user" else "VideoIntel"
+                        with st.chat_message(msg["role"], avatar=avatar):
+                            st.markdown(f'<span class="msg-marker msg-{msg["role"]}"></span>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="msg-role">{role_label}</div>', unsafe_allow_html=True)
+                            st.markdown(msg["content"])
+
+            # Chat input bar
+            user_query = st.chat_input("Ask a question about this meeting…")
+
+            # Check if a suggestion or the chat input triggered
+            active_query = prompt_to_send or user_query
+            if active_query:
+                st.session_state.chat_history.append({"role": "user", "content": active_query})
+                with st.spinner("Searching the transcript…"):
+                    answer = ask_question(r["rag_chain"], active_query)
+                st.session_state.chat_history.append({"role": "assistant", "content": answer})
                 st.rerun()
 
     with tab_transcript:
-        st.markdown('<div class="glass-box">', unsafe_allow_html=True)
         t_header_col, t_dl_col = st.columns([8, 4])
         with t_header_col:
-            st.markdown("### 📝 Full Meeting Transcript")
+            st.markdown("""
+            <div class="panel-title">Full transcript</div>
+            <div class="panel-sub">Verbatim output from Whisper.</div>
+            """, unsafe_allow_html=True)
         with t_dl_col:
             st.download_button(
-                label="📥 Download Transcript (.txt)",
+                label="↓  Download .txt",
                 data=r["transcript"],
                 file_name=f"Transcript_{int(time.time())}.txt",
                 mime="text/plain",
                 use_container_width=True
             )
-        st.markdown(f'<div class="transcript-scroll">{r["transcript"]}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="transcript-scroll">{html.escape(r["transcript"])}</div>', unsafe_allow_html=True)
