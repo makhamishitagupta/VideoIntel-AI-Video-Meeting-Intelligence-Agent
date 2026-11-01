@@ -32,32 +32,6 @@
 
 ---
 
-## 🏗️ Architecture & Pipeline Workflow
-
-```
-[ YouTube URL or Media File ]
-             │
-             ▼
-[ Audio Acquisition (yt-dlp / PyDub / FFmpeg) ]
-             │ (16kHz Mono WAV Chunks)
-             ▼
-[ Local Transcription (OpenAI Whisper) ]
-             │
-      ┌──────┴────────────────────────────────────┐
-      ▼                                           ▼
-[ Executive Summarizer ]                 [ Semantic RAG Engine ]
-• Title Synthesis                        • Text Chunking (RecursiveSplitter)
-• Bulleted Overview                      • Vector Embeddings (MiniLM-L6-v2)
-• Action Items & Assignees               • ChromaDB Local Vector Store
-• Key Decisions & Open Questions         • Conversational QA with Groq LLM
-      │                                           │
-      └─────────────────────┬─────────────────────┘
-                            ▼
-           [ Streamlit Executive Web Dashboard ]
-```
-
----
-
 ## 🚀 Quickstart Guide
 
 ### 1. Prerequisites
